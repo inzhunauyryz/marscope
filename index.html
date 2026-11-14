@@ -10,11 +10,19 @@
   .title { position: absolute; z-index: 1000; top: 10px; left: 50px;
     background: rgba(0,0,0,.7); color: #ff9966; padding: 6px 12px;
     border-radius: 8px; font: bold 16px sans-serif; }
+  #panel { position: absolute; z-index: 1000; left: 10px; right: 10px; bottom: 24px;
+    background: rgba(0,0,0,.8); color: #fff; padding: 10px 12px;
+    border-radius: 10px; font: 14px sans-serif; }
+  #panel button { margin-top: 6px; padding: 6px 12px; border: 0;
+    border-radius: 6px; background: #ff9966; font-weight: bold; }
+  .popup-btn { margin-top: 6px; padding: 6px 10px; border: 0;
+    border-radius: 6px; background: #ff9966; font-weight: bold; }
 </style>
 </head>
 <body>
 <div class="title">MARSCOPE</div>
 <div id="map"></div>
+<div id="panel"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const base = "https://trek.nasa.gov/tiles/Mars/EQ/";
@@ -40,14 +48,73 @@ L.control.layers(
   { "Imagery (Viking)": viking, "Elevation (MOLA)": mola }
 ).addTo(map);
 
+// ---------- Route planning ----------
+const MARS_RADIUS_KM = 3389.5;
+const routeGroup = L.layerGroup().addTo(map);
+const panel = document.getElementById("panel");
+let pts = [];
+
+function distanceKm(a, b) {
+  const r = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+  const h = Math.sin(dLat / 2) ** 2 +
+    Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2;
+  return 2 * MARS_RADIUS_KM * Math.asin(Math.sqrt(h));
+}
+
+function addPoint(latlng) {
+  if (pts.length >= 2) pts = [];
+  pts.push(latlng);
+  redraw();
+}
+
+function resetRoute() { pts = []; redraw(); }
+
+function redraw() {
+  routeGroup.clearLayers();
+  pts.forEach((p, i) => {
+    L.circleMarker(p, { radius: 8, color: i ? "#ff4444" : "#44ff88",
+      fillOpacity: 1 })
+      .bindTooltip(i ? "B" : "A", { permanent: true, direction: "top" })
+      .addTo(routeGroup);
+  });
+  if (pts.length === 2) {
+    L.polyline(pts, { color: "#ffffff", weight: 3, dashArray: "6 6" })
+      .addTo(routeGroup);
+    const d = distanceKm(pts[0], pts[1]);
+    panel.innerHTML = "<b>Route A \u2192 B</b><br>Straight-line distance: " +
+      d.toFixed(1) + " km<br><button id='rst'>Reset route</button>";
+  } else if (pts.length === 1) {
+    panel.innerHTML = "Point A set. Tap the map to set point B.";
+  } else {
+    panel.innerHTML = "Tap the map or a marker to set point A, then point B.";
+  }
+  const b = document.getElementById("rst");
+  if (b) b.onclick = resetRoute;
+}
+
+map.on("click", e => addPoint(e.latlng));
+
+// ---------- Points of interest ----------
 const places = [
   { n: "Jezero Crater", p: [18.4, 77.7], d: "Landing site of Perseverance. Ancient river delta." },
   { n: "Gale Crater", p: [-5.4, 137.8], d: "Curiosity rover site. Mount Sharp has layered sedimentary rock." },
   { n: "Olympus Mons", p: [18.65, -133.8], d: "The largest volcano in the Solar System." },
   { n: "Valles Marineris", p: [-14, -59], d: "Canyon system more than 4,000 km long." }
 ];
-places.forEach(x => L.marker(x.p).addTo(map)
-  .bindPopup("<b>" + x.n + "</b><br>" + x.d));
+
+places.forEach(x => {
+  const box = document.createElement("div");
+  box.innerHTML = "<b>" + x.n + "</b><br>" + x.d + "<br>";
+  const btn = document.createElement("button");
+  btn.className = "popup-btn";
+  btn.textContent = "Add to route";
+  btn.onclick = () => { addPoint(L.latLng(x.p[0], x.p[1])); map.closePopup(); };
+  box.appendChild(btn);
+  L.marker(x.p).addTo(map).bindPopup(box);
+});
+
+redraw();
 </script>
 </body>
 </html>
