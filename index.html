@@ -331,6 +331,47 @@ redraw = function () {
     analyzeRoute(pts[0], pts[1], box);
   }
 };
+// ---- TEST: unshaded MOLA colour tiles ----
+const boxNS = document.createElement("div");
+boxNS.style.cssText = "position:absolute;z-index:1000;top:50px;left:10px;" +
+  "background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:8px;" +
+  "font:11px sans-serif;max-width:90%;max-height:55%;overflow:auto";
+boxNS.textContent = "Loading test...";
+document.body.appendChild(boxNS);
+
+function sampleNS(ll, cb) {
+  const z = 5, n = Math.pow(2, z), r = Math.PI / 180;
+  const lat = Math.max(-85, Math.min(85, ll.lat));
+  const fx = (ll.lng + 180) / 360 * n;
+  const fy = (1 - Math.log(Math.tan(lat * r) + 1 / Math.cos(lat * r)) / Math.PI) / 2 * n;
+  const col = Math.floor(fx), row = Math.floor(fy);
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    try {
+      const c = document.createElement("canvas");
+      c.width = c.height = 256;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const d = ctx.getImageData(Math.floor((fx - col) * 256),
+        Math.floor((fy - row) * 256), 1, 1).data;
+      cb(null, [d[0], d[1], d[2]]);
+    } catch (e) { cb("blocked: " + e.name); }
+  };
+  img.onerror = () => cb("tile failed (CORS or URL)");
+  img.src = "https://s3-eu-west-1.amazonaws.com/whereonmars.cartodb.net/" +
+    "mola_color-noshade_global/" + z + "/" + col + "/" + (n - 1 - row) + ".png";
+}
+
+const allA = anchors.concat(anchors2);
+const linesNS = [];
+let doneNS = 0;
+allA.forEach((a, i) => {
+  sampleNS(L.latLng(a[1], a[2]), (err, rgb) => {
+    linesNS[i] = a[0] + " (" + a[3] + " km): " + (err || rgb.join(","));
+    if (++doneNS === allA.length) boxNS.innerHTML = linesNS.join("<br>");
+  });
+});
 
 </script>
 </body>
