@@ -235,6 +235,76 @@ places.forEach(x => {
 });
 
 redraw();
+  // ---------- Layer guide ----------
+const gbtn = document.createElement("button");
+gbtn.textContent = "Layer guide";
+gbtn.style.cssText = "position:absolute;z-index:1000;top:10px;left:176px;" +
+  "padding:6px 10px;border:0;border-radius:8px;background:#ff9966;" +
+  "font:bold 13px sans-serif";
+document.body.appendChild(gbtn);
+
+const gbox = document.createElement("div");
+gbox.style.cssText = "position:absolute;z-index:1001;top:60px;left:10px;" +
+  "right:10px;max-height:70%;overflow-y:auto;display:none;" +
+  "background:rgba(0,0,0,.93);color:#fff;padding:12px;border-radius:10px;" +
+  "font:13px sans-serif";
+gbox.innerHTML =
+  "<b>MARSCOPE combines 4 NASA missions</b><br><br>" +
+  "<b>Imagery - Viking Orbiters</b> (232 m/px)<br>Global color context for " +
+  "geology and surface features.<br><br>" +
+  "<b>Elevation - Mars Global Surveyor / MOLA</b> (463 m/px)<br>Laser " +
+  "altimeter map. Purple is low, white is high. Shows volcanoes, canyons " +
+  "and basins.<br><br>" +
+  "<b>Thermal IR - Mars Odyssey / THEMIS</b> (100 m/px)<br>Daytime " +
+  "infrared brightness reflects surface temperature, which depends on the " +
+  "material (rock vs. dust and sand).<br><br>" +
+  "<b>High-res - Mars Reconnaissance Orbiter / CTX</b> (5 m/px)<br>Shows " +
+  "craters, dunes, ridges and large obstacles in detail. Zoom in to plan " +
+  "a walk.<br><br>" +
+  "<b>Hazard zones</b><br>Approximate regional boxes (canyons, volcano " +
+  "slopes, deep basins, polar ice) used to screen a route. Red is high " +
+  "hazard, yellow is moderate.";
+document.body.appendChild(gbox);
+gbtn.onclick = () => {
+  gbox.style.display = gbox.style.display === "none" ? "block" : "none";
+};
+
+// ---------- Destination briefing cards ----------
+function showInCtx(ll) {
+  const entry = layerCtl._layers.find(l => l.name.indexOf("High-res") === 0);
+  if (entry) {
+    layerCtl._layers.forEach(l => { if (!l.overlay) map.removeLayer(l.layer); });
+    map.addLayer(entry.layer);
+  }
+  map.closePopup();
+  map.flyTo(ll, 10);
+}
+
+poiGroup.clearLayers();
+places.forEach(x => {
+  const ll = L.latLng(x.p[0], x.p[1]);
+  const here = zones.filter(z => inZone(ll, z))
+    .map(z => z.n + " (" + z.sev + ")");
+  const box = document.createElement("div");
+  box.style.maxWidth = "230px";
+  box.innerHTML = "<b>" + x.n + "</b><br>" + x.d +
+    "<br><span class='small'>" + x.p[0] + "\u00B0, " + x.p[1] +
+    "\u00B0</span><br>Hazard zones here: " +
+    (here.length ? here.join(", ") : "none mapped") + "<br>";
+  const b1 = document.createElement("button");
+  b1.className = "popup-btn";
+  b1.textContent = "Add to route";
+  b1.onclick = () => { addPoint(ll); map.closePopup(); };
+  const b2 = document.createElement("button");
+  b2.className = "popup-btn";
+  b2.style.marginLeft = "6px";
+  b2.textContent = "View in CTX";
+  b2.onclick = () => showInCtx(ll);
+  box.appendChild(b1);
+  box.appendChild(b2);
+  L.marker(x.p).addTo(poiGroup).bindPopup(box);
+});
+
 </script>
 </body>
 </html>
