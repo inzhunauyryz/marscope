@@ -199,6 +199,138 @@ anchors2.forEach((a, i) => {
     if (++done2 === anchors2.length) box2.innerHTML = lines2.join("<br>");
   });
 });
+// ---- ELEVATION + HAZARD ASSESSMENT ----
+box2.style.display = "none";
+testBox.style.display = "none";
+panel.style.maxHeight = "45%";
+panel.style.overflowY = "auto";
+
+function rgb2hsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if (d) {
+    if (mx === r) h = 60 * (((g - b) / d) % 6);
+    else if (mx === g) h = 60 * ((b - r) / d + 2);
+    else h = 60 * ((r - g) / d + 4);
+    if (h < 0) h += 360;
+  }
+  return { h: h, s: mx ? d / mx : 0, v: mx };
+}
+
+function interp(tab, x) {
+  if (x <= tab[0][0]) return tab[0][1];
+  for (let i = 1; i < tab.length; i++) {
+    if (x <= tab[i][0]) {
+      const a = tab[i - 1], b = tab[i];
+      return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]);
+    }
+  }
+  return tab[tab.length - 1][1];
+}
+
+const HUE_TAB = [[23, 2], [32, 0], [93, -1.3], [150, -3], [230, -5], [254, -8]];
+const SAT_TAB = [[0, 20], [0.05, 16], [0.12, 12], [0.2, 9], [0.33, 7], [0.45, 4], [0.65, 2]];
+
+function decodeElev(r, g, b) {
+  const c = rgb2hsv(r, g, b);
+  if (c.v < 0.25) return null;
+  if (c.v > 0.96 && c.s < 0.15) return 20;
+  if (c.s >= 0.25 && c.h >= 22 && c.h <= 290) return interp(HUE_TAB, c.h);
+  return interp(SAT_TAB, c.s);
+}
+
+function sampleElevation(ll, cb) {
+  const z = 5, n = Math.pow(2, z);
+  const fx = (ll.lng + 180) / 360 * n * 2;
+  const fy = (90 - ll.lat) / 180 * n;
+  const col = Math.max(0, Math.min(Math.floor(fx), 2 * n - 1));
+  const row = Math.max(0, Math.min(Math.floor(fy), n - 1));
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    try {
+      const c = document.createElement("canvas");
+      c.width = c.height = 256;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const px = Math.max(0, Math.min(Math.floor((fx - col) * 256) - 2, 251));
+      const py = Math.max(0, Math.min(Math.floor((fy - row) * 256) - 2, 251));
+      const d = ctx.getImageData(px, py, 5, 5).data;
+      const vals = [];
+      for (let i = 0; i < d.length; i += 4) {
+        const e = decodeElev(d[i], d[i + 1], d[i + 2]);
+        if (e !== null) vals.push(e);
+      }
+      if (vals.length < 8) return cb(null);
+      vals.sort((a, b) => a - b);
+      cb(vals[Math.floor(vals.length / 2)]);
+    } catch (e) { cb(null); }
+  };
+  img.onerror = () => cb(null);
+  img.src = base + "Mars_MGS_MOLA_ClrShade_merge_global_463m" +
+    "/1.0.0/default/default028mm/" + z + "/" + row + "/" + col + ".jpg";
+}
+
+function analyzeRoute(a, b, box) {
+  const N = 16, el = new Array(N + 1);
+  let done = 0;
+  for (let i = 0; i <= N; i++) {
+    const p = L.latLng(a.lat + (b.lat - a.lat) * i / N,
+                       a.lng + (b.lng - a.lng) * i / N);
+    sampleElevation(p, km => {
+      el[i] = km;
+      if (++done === N + 1) report();
+    });
+  }
+  function report() {
+    if (!box.isConnected) return;
+    const known = el.filter(v => v !== null && v !== undefined);
+    if (known.length < 8) {
+      box.innerHTML = "<br>Not enough elevation data for this route.";
+      return;
+    }
+    let last = known[0];
+    for (let i = 0; i <= N; i++) {
+      if (el[i] === null || el[i] === undefined) el[i] = last; else last = el[i];
+    }
+    const total = distanceKm(a, b), step = total / N;
+    let mn = Infinity, mx = -Infinity, maxD = 0;
+    for (let i = 0; i <= N; i++) {
+      mn = Math.min(mn, el[i]); mx = Math.max(mx, el[i]);
+      if (i) maxD = Math.max(maxD, Math.abs(el[i] - el[i - 1]));
+    }
+    const relief = mx - mn;
+    const grad = maxD / step * 1000;
+    const deg = Math.atan(maxD / step) * 180 / Math.PI;
+    const level = (grad > 30 || relief > 10) ? "HIGH"
+      : (grad > 10 || relief > 5) ? "MODERATE" : "LOW";
+    const color = level === "HIGH" ? "#ff5555"
+      : level === "MODERATE" ? "#ffcc44" : "#55dd88";
+    const bars = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588";
+    const spark = el.map(v => bars[Math.max(0, Math.min(7,
+      Math.round((v - mn) / ((relief || 1)) * 7)))]).join("");
+    box.innerHTML = "<br>Elevation A: ~" + el[0].toFixed(1) + " km, B: ~" +
+      el[N].toFixed(1) + " km<br>Range: " + mn.toFixed(1) + " to " +
+      mx.toFixed(1) + " km (relief ~" + relief.toFixed(1) + " km)<br>" +
+      "Steepest segment: ~" + grad.toFixed(0) + " m/km (" + deg.toFixed(1) +
+      "\u00B0)<br><span style='font-size:20px;letter-spacing:1px'>" + spark +
+      "</span><br>Terrain hazard: <b style='color:" + color + "'>" + level +
+      "</b><br><i style='font-size:11px'>Approximate, decoded from MOLA " +
+      "colour. Regional scale only.</i>";
+  }
+}
+
+const baseRedraw = redraw;
+redraw = function () {
+  baseRedraw();
+  if (pts.length === 2) {
+    const box = document.createElement("div");
+    box.textContent = "Analyzing terrain...";
+    panel.insertBefore(box, document.getElementById("rst"));
+    analyzeRoute(pts[0], pts[1], box);
+  }
+};
 
 </script>
 </body>
