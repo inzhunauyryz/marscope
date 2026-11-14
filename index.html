@@ -171,6 +171,34 @@ anchors.forEach((a, i) => {
     }
   });
 });
+// ---- CALIBRATION 2 ----
+testBox.style.display = "none";
+const anchors2 = [
+  ["Utopia Planitia", 45, 110, -4],
+  ["Argyre floor", -50, -43, -4],
+  ["Melas Chasma", -10, -74, -4.5],
+  ["Syrtis Major", 9, 69, 0],
+  ["Southern highlands", -10, 45, 2],
+  ["Noctis Labyrinthus", -7, -102, 5],
+  ["Alba Mons", 40.5, -110.5, 6.8],
+  ["Tharsis plateau", 0, -105, 8],
+  ["Pavonis Mons", 0.5, -113.4, 14],
+  ["Arsia Mons", -9.2, -120.1, 17.7],
+  ["Ascraeus Mons", 11.8, -104.5, 18]
+];
+const box2 = document.createElement("div");
+box2.style.cssText = "position:absolute;z-index:1000;top:50px;left:10px;" +
+  "background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:8px;" +
+  "font:11px sans-serif;max-width:85%";
+document.body.appendChild(box2);
+const lines2 = [];
+let done2 = 0;
+anchors2.forEach((a, i) => {
+  sampleMola(L.latLng(a[1], a[2]), (err, rgb) => {
+    lines2[i] = a[0] + " (" + a[3] + " km): " + (err || rgb.join(","));
+    if (++done2 === anchors2.length) box2.innerHTML = lines2.join("<br>");
+  });
+});
 
 </script>
 </body>
