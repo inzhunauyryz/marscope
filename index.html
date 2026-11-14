@@ -115,6 +115,43 @@ places.forEach(x => {
 });
 
 redraw();
+  // ---- TEST: can we read MOLA pixels? ----
+const testBox = document.createElement("div");
+testBox.style.cssText = "position:absolute;z-index:1000;top:50px;left:10px;" +
+  "background:rgba(0,0,0,.8);color:#fff;padding:6px 10px;border-radius:8px;" +
+  "font:13px sans-serif;max-width:70%";
+testBox.textContent = "Test: tap the map";
+document.body.appendChild(testBox);
+
+function sampleMola(ll, cb) {
+  const z = 5, n = Math.pow(2, z);
+  const fx = (ll.lng + 180) / 360 * n * 2;
+  const fy = (90 - ll.lat) / 180 * n;
+  const col = Math.floor(fx), row = Math.floor(fy);
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    try {
+      const c = document.createElement("canvas");
+      c.width = c.height = 256;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const px = Math.floor((fx - col) * 256);
+      const py = Math.floor((fy - row) * 256);
+      const d = ctx.getImageData(px, py, 1, 1).data;
+      cb(null, [d[0], d[1], d[2]]);
+    } catch (e) { cb("blocked: " + e.name); }
+  };
+  img.onerror = () => cb("tile failed to load (CORS or URL)");
+  img.src = base + "Mars_MGS_MOLA_ClrShade_merge_global_463m" +
+    "/1.0.0/default/default028mm/" + z + "/" + row + "/" + col + ".jpg";
+}
+
+map.on("click", e => sampleMola(e.latlng, (err, rgb) => {
+  testBox.textContent = err ? "Test result: " + err
+    : "Test result: RGB = " + rgb.join(", ");
+}));
+
 </script>
 </body>
 </html>
