@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARSCOPE</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  html, body, #map { height: 100%; margin: 0; background: #1a0f0a; }
+  .title { position: absolute; z-index: 1000; top: 10px; left: 50px;
+    background: rgba(0,0,0,.7); color: #ff9966; padding: 6px 12px;
+    border-radius: 8px; font: bold 16px sans-serif; }
+</style>
+</head>
+<body>
+<div class="title">MARSCOPE</div>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const base = "https://trek.nasa.gov/tiles/Mars/EQ/";
+const tail = "/1.0.0/default/default028mm/{z}/{y}/{x}";
+
+const viking = L.tileLayer(
+  base + "Mars_Viking_MDIM21_ClrMosaic_global_232m" + tail + ".jpg",
+  { maxNativeZoom: 7, maxZoom: 9, noWrap: true,
+    attribution: "NASA/USGS Viking MDIM2.1" });
+
+const mola = L.tileLayer(
+  base + "Mars_MGS_MOLA_ClrShade_merge_global_463m" + tail + ".png",
+  { maxNativeZoom: 6, maxZoom: 9, noWrap: true,
+    attribution: "NASA MGS MOLA" });
+
+const map = L.map("map", {
+  crs: L.CRS.EPSG4326, center: [10, 0], zoom: 1, minZoom: 0,
+  maxBounds: [[-90, -180], [90, 180]], layers: [viking]
+});
+
+L.control.layers(
+  { "Снимки (Viking)": viking, "Рельеф (MOLA)": mola }
+).addTo(map);
+
+const places = [
+  { n: "Jezero Crater", p: [18.4, 77.7], d: "Место посадки Perseverance, древняя дельта реки." },
+  { n: "Gale Crater", p: [-5.4, 137.8], d: "Кратер Curiosity, гора Шарп со слоями осадочных пород." },
+  { n: "Olympus Mons", p: [18.65, -133.8], d: "Крупнейший вулкан Солнечной системы." },
+  { n: "Valles Marineris", p: [-14, -59], d: "Система каньонов длиной более 4000 км." }
+];
+places.forEach(x => L.marker(x.p).addTo(map)
+  .bindPopup("<b>" + x.n + "</b><br>" + x.d));
+</script>
+</body>
+</html>
