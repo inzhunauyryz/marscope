@@ -403,6 +403,21 @@ redraw = function () {
   box.appendChild(document.createElement("br"));
   panel.insertBefore(box, document.getElementById("rst"));
 };
+// ---------- Short routes: show one decimal ----------
+const redrawBase4 = redraw;
+redraw = function () {
+  redrawBase4();
+  if (pts.length !== 2) return;
+  const d = distanceKm(pts[0], pts[1]);
+  if (d >= 50) return;
+  const w = document.createTreeWalker(panel, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = w.nextNode())) {
+    if (n.nodeValue.indexOf("Straight-line distance: ") === 0) {
+      n.nodeValue = "Straight-line distance: " + d.toFixed(1) + " km";
+    }
+  }
+};
 
 </script>
 </body>
