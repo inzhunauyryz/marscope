@@ -11,12 +11,12 @@
     background: rgba(0,0,0,.7); color: #ff9966; padding: 6px 12px;
     border-radius: 8px; font: bold 16px sans-serif; }
   #panel { position: absolute; z-index: 1000; left: 10px; right: 10px; bottom: 24px;
-    background: rgba(0,0,0,.8); color: #fff; padding: 10px 12px;
+    max-height: 45%; overflow-y: auto;
+    background: rgba(0,0,0,.85); color: #fff; padding: 10px 12px;
     border-radius: 10px; font: 14px sans-serif; }
-  #panel button { margin-top: 6px; padding: 6px 12px; border: 0;
+  #panel button, .popup-btn { margin-top: 6px; padding: 6px 12px; border: 0;
     border-radius: 6px; background: #ff9966; font-weight: bold; }
-  .popup-btn { margin-top: 6px; padding: 6px 10px; border: 0;
-    border-radius: 6px; background: #ff9966; font-weight: bold; }
+  .small { font-size: 12px; opacity: .8; }
 </style>
 </head>
 <body>
@@ -25,33 +25,83 @@
 <div id="panel"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const base = "https://trek.nasa.gov/tiles/Mars/EQ/";
-const tail = "/1.0.0/default/default028mm/{z}/{y}/{x}";
-
-const viking = L.tileLayer(
-  base + "Mars_Viking_MDIM21_ClrMosaic_global_232m" + tail + ".jpg",
-  { maxNativeZoom: 7, maxZoom: 9, noWrap: true,
-    attribution: "NASA/USGS Viking MDIM2.1" });
-
-const mola = L.tileLayer(
-  base + "Mars_MGS_MOLA_ClrShade_merge_global_463m" + tail + ".jpg",
-  { maxNativeZoom: 6, maxZoom: 9, noWrap: true,
-    attribution: "NASA MGS MOLA" });
+// ---------- Data layers (NASA Mars Trek) ----------
+const T = "https://trek.nasa.gov/tiles/Mars/EQ/";
+const tail = "/1.0.0/default/default028mm/{z}/{y}/{x}.jpg";
+function trek(name, nz, attr) {
+  return L.tileLayer(T + name + tail, { maxNativeZoom: nz, maxZoom: 14,
+    noWrap: true, attribution: attr });
+}
+const viking = trek("Mars_Viking_MDIM21_ClrMosaic_global_232m", 7, "NASA/USGS Viking MDIM2.1");
+const mola = trek("Mars_MGS_MOLA_ClrShade_merge_global_463m", 6, "NASA MGS MOLA");
+const themis = trek("Mars_MO_THEMIS-IR-Day_mosaic_global_100m_v12_clon0_ly", 9, "NASA Mars Odyssey THEMIS");
+const ctx = trek("CTX_beta01_uncontrolled_5m_Caltech", 13, "NASA MRO CTX / Caltech");
 
 const map = L.map("map", {
-  crs: L.CRS.EPSG4326, minZoom: 0,
+  crs: L.CRS.EPSG4326, minZoom: 0, maxZoom: 14,
   maxBounds: [[-90, -180], [90, 180]], layers: [viking]
 });
 map.fitBounds([[-90, -180], [90, 180]]);
 
+const hazardGroup = L.layerGroup().addTo(map);
+const poiGroup = L.layerGroup().addTo(map);
+
 L.control.layers(
-  { "Imagery (Viking)": viking, "Elevation (MOLA)": mola }
+  { "Imagery - Viking": viking,
+    "Elevation - MOLA": mola,
+    "Thermal IR - THEMIS": themis,
+    "High-res - CTX (zoom in)": ctx },
+  { "Hazard zones": hazardGroup, "Science targets": poiGroup }
 ).addTo(map);
+
+// ---------- Hazard zones (approximate regional boxes) ----------
+const zones = [
+  { n: "Valles Marineris", b: [[-17, -90], [-2, -35]], sev: "HIGH",
+    d: "Canyon system over 4,000 km long with very steep walls." },
+  { n: "Olympus Mons", b: [[13.5, -139.5], [23.8, -128.2]], sev: "HIGH",
+    d: "Giant volcano with a cliff-like escarpment around its base." },
+  { n: "Tharsis volcanoes", b: [[-14, -125], [16, -99]], sev: "HIGH",
+    d: "Arsia, Pavonis and Ascraeus Mons: long volcanic slopes and lava flows." },
+  { n: "Hellas basin", b: [[-62, 45], [-23, 96]], sev: "MODERATE",
+    d: "Huge, very deep impact basin with steep rim terrain." },
+  { n: "Argyre basin", b: [[-65, -70], [-35, -15]], sev: "MODERATE",
+    d: "Large impact basin with a rugged rim." },
+  { n: "North polar region", b: [[80, -180], [90, 180]], sev: "HIGH",
+    d: "Seasonal CO2 frost and ice, extreme cold." },
+  { n: "South polar region", b: [[-90, -180], [-80, 180]], sev: "HIGH",
+    d: "Seasonal CO2 frost and ice, extreme cold." }
+];
+zones.forEach(z => L.rectangle(z.b, {
+  color: z.sev === "HIGH" ? "#ff5555" : "#ffcc44",
+  weight: 1.5, fillOpacity: 0.15, interactive: false
+}).addTo(hazardGroup));
+
+function inZone(p, z) {
+  return p.lat >= z.b[0][0] && p.lat <= z.b[1][0] &&
+         p.lng >= z.b[0][1] && p.lng <= z.b[1][1];
+}
+
+function screenRoute(a, b) {
+  const N = 100, hits = {}, order = [];
+  for (let i = 0; i <= N; i++) {
+    const p = { lat: a.lat + (b.lat - a.lat) * i / N,
+                lng: a.lng + (b.lng - a.lng) * i / N };
+    zones.forEach((z, k) => {
+      if (inZone(p, z)) {
+        if (!hits[k]) { hits[k] = 0; order.push(k); }
+        hits[k]++;
+      }
+    });
+  }
+  return order.map(k => ({ z: zones[k], pct: hits[k] / (N + 1) * 100 }));
+}
 
 // ---------- Route planning ----------
 const MARS_RADIUS_KM = 3389.5;
 const routeGroup = L.layerGroup().addTo(map);
 const panel = document.getElementById("panel");
+const HINT = "Tap the map or a marker to set point A, then point B.<br>" +
+  "<span class='small'>Red and yellow boxes are hazard zones.</span>";
 let pts = [];
 
 function distanceKm(a, b) {
@@ -67,7 +117,6 @@ function addPoint(latlng) {
   pts.push(latlng);
   redraw();
 }
-
 function resetRoute() { pts = []; redraw(); }
 
 function redraw() {
@@ -82,12 +131,33 @@ function redraw() {
     L.polyline(pts, { color: "#ffffff", weight: 3, dashArray: "6 6" })
       .addTo(routeGroup);
     const d = distanceKm(pts[0], pts[1]);
-    panel.innerHTML = "<b>Route A \u2192 B</b><br>Straight-line distance: " +
-      d.toFixed(1) + " km<br><button id='rst'>Reset route</button>";
+    const found = screenRoute(pts[0], pts[1]);
+    let score = 0;
+    found.forEach(f => score += f.pct * (f.z.sev === "HIGH" ? 1 : 0.5));
+    const level = score >= 25 ? "HIGH" : score >= 8 ? "MODERATE" : "LOW";
+    const color = level === "HIGH" ? "#ff5555"
+      : level === "MODERATE" ? "#ffcc44" : "#55dd88";
+    let html = "<b>Route A \u2192 B</b><br>Straight-line distance: " +
+      d.toFixed(0) + " km<br>Route hazard level: <b style='color:" + color +
+      "'>" + level + "</b><br>";
+    if (found.length) {
+      html += "<br><b>Hazard zones crossed:</b><br>";
+      found.forEach(f => {
+        html += "\u2022 " + f.z.n + " (" + f.z.sev + "), " +
+          f.pct.toFixed(0) + "% of route<br><span class='small'>" +
+          f.z.d + "</span><br>";
+      });
+    } else {
+      html += "<br>No mapped hazard zones crossed.<br>";
+    }
+    html += "<br><span class='small'>Regional screening only. Switch to the " +
+      "High-res (CTX) layer and zoom in to inspect local terrain.</span><br>" +
+      "<button id='rst'>Reset route</button>";
+    panel.innerHTML = html;
   } else if (pts.length === 1) {
     panel.innerHTML = "Point A set. Tap the map to set point B.";
   } else {
-    panel.innerHTML = "Tap the map or a marker to set point A, then point B.";
+    panel.innerHTML = HINT;
   }
   const b = document.getElementById("rst");
   if (b) b.onclick = resetRoute;
@@ -95,14 +165,19 @@ function redraw() {
 
 map.on("click", e => addPoint(e.latlng));
 
-// ---------- Points of interest ----------
+// ---------- Science targets ----------
 const places = [
-  { n: "Jezero Crater", p: [18.4, 77.7], d: "Landing site of Perseverance. Ancient river delta." },
-  { n: "Gale Crater", p: [-5.4, 137.8], d: "Curiosity rover site. Mount Sharp has layered sedimentary rock." },
-  { n: "Olympus Mons", p: [18.65, -133.8], d: "The largest volcano in the Solar System." },
-  { n: "Valles Marineris", p: [-14, -59], d: "Canyon system more than 4,000 km long." }
+  { n: "Jezero Crater", p: [18.4, 77.7],
+    d: "Perseverance landing site (2021). Ancient river delta: a prime place to search for signs of past life." },
+  { n: "Gale Crater", p: [-5.4, 137.8],
+    d: "Curiosity landing site (2012). Mount Sharp's layered rock records how the climate changed." },
+  { n: "Meridiani Planum", p: [-1.95, -5.53],
+    d: "Opportunity landing site (2004). Rich in hematite, a mineral that often forms in water." },
+  { n: "Olympus Mons", p: [18.65, -133.8],
+    d: "The largest volcano in the Solar System." },
+  { n: "Valles Marineris", p: [-14, -59],
+    d: "Canyon system over 4,000 km long; its walls expose layers of Mars' history." }
 ];
-
 places.forEach(x => {
   const box = document.createElement("div");
   box.innerHTML = "<b>" + x.n + "</b><br>" + x.d + "<br>";
@@ -111,268 +186,10 @@ places.forEach(x => {
   btn.textContent = "Add to route";
   btn.onclick = () => { addPoint(L.latLng(x.p[0], x.p[1])); map.closePopup(); };
   box.appendChild(btn);
-  L.marker(x.p).addTo(map).bindPopup(box);
+  L.marker(x.p).addTo(poiGroup).bindPopup(box);
 });
 
 redraw();
-  // ---- TEST: can we read MOLA pixels? ----
-const testBox = document.createElement("div");
-testBox.style.cssText = "position:absolute;z-index:1000;top:50px;left:10px;" +
-  "background:rgba(0,0,0,.8);color:#fff;padding:6px 10px;border-radius:8px;" +
-  "font:13px sans-serif;max-width:70%";
-testBox.textContent = "Test: tap the map";
-document.body.appendChild(testBox);
-
-function sampleMola(ll, cb) {
-  const z = 5, n = Math.pow(2, z);
-  const fx = (ll.lng + 180) / 360 * n * 2;
-  const fy = (90 - ll.lat) / 180 * n;
-  const col = Math.floor(fx), row = Math.floor(fy);
-  const img = new Image();
-  img.crossOrigin = "anonymous";
-  img.onload = () => {
-    try {
-      const c = document.createElement("canvas");
-      c.width = c.height = 256;
-      const ctx = c.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-      const px = Math.floor((fx - col) * 256);
-      const py = Math.floor((fy - row) * 256);
-      const d = ctx.getImageData(px, py, 1, 1).data;
-      cb(null, [d[0], d[1], d[2]]);
-    } catch (e) { cb("blocked: " + e.name); }
-  };
-  img.onerror = () => cb("tile failed to load (CORS or URL)");
-  img.src = base + "Mars_MGS_MOLA_ClrShade_merge_global_463m" +
-    "/1.0.0/default/default028mm/" + z + "/" + row + "/" + col + ".jpg";
-}
-
-map.on("click", e => sampleMola(e.latlng, (err, rgb) => {
-  testBox.textContent = err ? "Test result: " + err
-    : "Test result: RGB = " + rgb.join(", ");
-}));
-// ---- CALIBRATION ----
-const anchors = [
-  ["Hellas floor", -42.4, 70.5, -8.2],
-  ["Gale", -5.4, 137.8, -4.4],
-  ["Jezero", 18.4, 77.7, -2.6],
-  ["Meridiani", -2.0, -1.5, -1.3],
-  ["Elysium Mons", 25.0, 147.2, 14.1],
-  ["Olympus Mons", 18.65, -133.8, 21.2]
-];
-const calLines = [];
-let calDone = 0;
-anchors.forEach((a, i) => {
-  sampleMola(L.latLng(a[1], a[2]), (err, rgb) => {
-    calLines[i] = a[0] + " (" + a[3] + " km): " + (err || rgb.join(","));
-    calDone++;
-    if (calDone === anchors.length) {
-      testBox.innerHTML = calLines.join("<br>");
-    }
-  });
-});
-// ---- CALIBRATION 2 ----
-testBox.style.display = "none";
-const anchors2 = [
-  ["Utopia Planitia", 45, 110, -4],
-  ["Argyre floor", -50, -43, -4],
-  ["Melas Chasma", -10, -74, -4.5],
-  ["Syrtis Major", 9, 69, 0],
-  ["Southern highlands", -10, 45, 2],
-  ["Noctis Labyrinthus", -7, -102, 5],
-  ["Alba Mons", 40.5, -110.5, 6.8],
-  ["Tharsis plateau", 0, -105, 8],
-  ["Pavonis Mons", 0.5, -113.4, 14],
-  ["Arsia Mons", -9.2, -120.1, 17.7],
-  ["Ascraeus Mons", 11.8, -104.5, 18]
-];
-const box2 = document.createElement("div");
-box2.style.cssText = "position:absolute;z-index:1000;top:50px;left:10px;" +
-  "background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:8px;" +
-  "font:11px sans-serif;max-width:85%";
-document.body.appendChild(box2);
-const lines2 = [];
-let done2 = 0;
-anchors2.forEach((a, i) => {
-  sampleMola(L.latLng(a[1], a[2]), (err, rgb) => {
-    lines2[i] = a[0] + " (" + a[3] + " km): " + (err || rgb.join(","));
-    if (++done2 === anchors2.length) box2.innerHTML = lines2.join("<br>");
-  });
-});
-// ---- ELEVATION + HAZARD ASSESSMENT ----
-box2.style.display = "none";
-testBox.style.display = "none";
-panel.style.maxHeight = "45%";
-panel.style.overflowY = "auto";
-
-function rgb2hsv(r, g, b) {
-  r /= 255; g /= 255; b /= 255;
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
-  let h = 0;
-  if (d) {
-    if (mx === r) h = 60 * (((g - b) / d) % 6);
-    else if (mx === g) h = 60 * ((b - r) / d + 2);
-    else h = 60 * ((r - g) / d + 4);
-    if (h < 0) h += 360;
-  }
-  return { h: h, s: mx ? d / mx : 0, v: mx };
-}
-
-function interp(tab, x) {
-  if (x <= tab[0][0]) return tab[0][1];
-  for (let i = 1; i < tab.length; i++) {
-    if (x <= tab[i][0]) {
-      const a = tab[i - 1], b = tab[i];
-      return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]);
-    }
-  }
-  return tab[tab.length - 1][1];
-}
-
-const HUE_TAB = [[23, 2], [32, 0], [93, -1.3], [150, -3], [230, -5], [254, -8]];
-const SAT_TAB = [[0, 20], [0.05, 16], [0.12, 12], [0.2, 9], [0.33, 7], [0.45, 4], [0.65, 2]];
-
-function decodeElev(r, g, b) {
-  const c = rgb2hsv(r, g, b);
-  if (c.v < 0.25) return null;
-  if (c.v > 0.96 && c.s < 0.15) return 20;
-  if (c.s >= 0.25 && c.h >= 22 && c.h <= 290) return interp(HUE_TAB, c.h);
-  return interp(SAT_TAB, c.s);
-}
-
-function sampleElevation(ll, cb) {
-  const z = 5, n = Math.pow(2, z);
-  const fx = (ll.lng + 180) / 360 * n * 2;
-  const fy = (90 - ll.lat) / 180 * n;
-  const col = Math.max(0, Math.min(Math.floor(fx), 2 * n - 1));
-  const row = Math.max(0, Math.min(Math.floor(fy), n - 1));
-  const img = new Image();
-  img.crossOrigin = "anonymous";
-  img.onload = () => {
-    try {
-      const c = document.createElement("canvas");
-      c.width = c.height = 256;
-      const ctx = c.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-      const px = Math.max(0, Math.min(Math.floor((fx - col) * 256) - 2, 251));
-      const py = Math.max(0, Math.min(Math.floor((fy - row) * 256) - 2, 251));
-      const d = ctx.getImageData(px, py, 5, 5).data;
-      const vals = [];
-      for (let i = 0; i < d.length; i += 4) {
-        const e = decodeElev(d[i], d[i + 1], d[i + 2]);
-        if (e !== null) vals.push(e);
-      }
-      if (vals.length < 8) return cb(null);
-      vals.sort((a, b) => a - b);
-      cb(vals[Math.floor(vals.length / 2)]);
-    } catch (e) { cb(null); }
-  };
-  img.onerror = () => cb(null);
-  img.src = base + "Mars_MGS_MOLA_ClrShade_merge_global_463m" +
-    "/1.0.0/default/default028mm/" + z + "/" + row + "/" + col + ".jpg";
-}
-
-function analyzeRoute(a, b, box) {
-  const N = 16, el = new Array(N + 1);
-  let done = 0;
-  for (let i = 0; i <= N; i++) {
-    const p = L.latLng(a.lat + (b.lat - a.lat) * i / N,
-                       a.lng + (b.lng - a.lng) * i / N);
-    sampleElevation(p, km => {
-      el[i] = km;
-      if (++done === N + 1) report();
-    });
-  }
-  function report() {
-    if (!box.isConnected) return;
-    const known = el.filter(v => v !== null && v !== undefined);
-    if (known.length < 8) {
-      box.innerHTML = "<br>Not enough elevation data for this route.";
-      return;
-    }
-    let last = known[0];
-    for (let i = 0; i <= N; i++) {
-      if (el[i] === null || el[i] === undefined) el[i] = last; else last = el[i];
-    }
-    const total = distanceKm(a, b), step = total / N;
-    let mn = Infinity, mx = -Infinity, maxD = 0;
-    for (let i = 0; i <= N; i++) {
-      mn = Math.min(mn, el[i]); mx = Math.max(mx, el[i]);
-      if (i) maxD = Math.max(maxD, Math.abs(el[i] - el[i - 1]));
-    }
-    const relief = mx - mn;
-    const grad = maxD / step * 1000;
-    const deg = Math.atan(maxD / step) * 180 / Math.PI;
-    const level = (grad > 30 || relief > 10) ? "HIGH"
-      : (grad > 10 || relief > 5) ? "MODERATE" : "LOW";
-    const color = level === "HIGH" ? "#ff5555"
-      : level === "MODERATE" ? "#ffcc44" : "#55dd88";
-    const bars = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588";
-    const spark = el.map(v => bars[Math.max(0, Math.min(7,
-      Math.round((v - mn) / ((relief || 1)) * 7)))]).join("");
-    box.innerHTML = "<br>Elevation A: ~" + el[0].toFixed(1) + " km, B: ~" +
-      el[N].toFixed(1) + " km<br>Range: " + mn.toFixed(1) + " to " +
-      mx.toFixed(1) + " km (relief ~" + relief.toFixed(1) + " km)<br>" +
-      "Steepest segment: ~" + grad.toFixed(0) + " m/km (" + deg.toFixed(1) +
-      "\u00B0)<br><span style='font-size:20px;letter-spacing:1px'>" + spark +
-      "</span><br>Terrain hazard: <b style='color:" + color + "'>" + level +
-      "</b><br><i style='font-size:11px'>Approximate, decoded from MOLA " +
-      "colour. Regional scale only.</i>";
-  }
-}
-
-const baseRedraw = redraw;
-redraw = function () {
-  baseRedraw();
-  if (pts.length === 2) {
-    const box = document.createElement("div");
-    box.textContent = "Analyzing terrain...";
-    panel.insertBefore(box, document.getElementById("rst"));
-    analyzeRoute(pts[0], pts[1], box);
-  }
-};
-// ---- TEST: unshaded MOLA colour tiles ----
-const boxNS = document.createElement("div");
-boxNS.style.cssText = "position:absolute;z-index:1000;top:50px;left:10px;" +
-  "background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:8px;" +
-  "font:11px sans-serif;max-width:90%;max-height:55%;overflow:auto";
-boxNS.textContent = "Loading test...";
-document.body.appendChild(boxNS);
-
-function sampleNS(ll, cb) {
-  const z = 5, n = Math.pow(2, z), r = Math.PI / 180;
-  const lat = Math.max(-85, Math.min(85, ll.lat));
-  const fx = (ll.lng + 180) / 360 * n;
-  const fy = (1 - Math.log(Math.tan(lat * r) + 1 / Math.cos(lat * r)) / Math.PI) / 2 * n;
-  const col = Math.floor(fx), row = Math.floor(fy);
-  const img = new Image();
-  img.crossOrigin = "anonymous";
-  img.onload = () => {
-    try {
-      const c = document.createElement("canvas");
-      c.width = c.height = 256;
-      const ctx = c.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-      const d = ctx.getImageData(Math.floor((fx - col) * 256),
-        Math.floor((fy - row) * 256), 1, 1).data;
-      cb(null, [d[0], d[1], d[2]]);
-    } catch (e) { cb("blocked: " + e.name); }
-  };
-  img.onerror = () => cb("tile failed (CORS or URL)");
-  img.src = "https://s3-eu-west-1.amazonaws.com/whereonmars.cartodb.net/" +
-    "mola_color-noshade_global/" + z + "/" + col + "/" + (n - 1 - row) + ".png";
-}
-
-const allA = anchors.concat(anchors2);
-const linesNS = [];
-let doneNS = 0;
-allA.forEach((a, i) => {
-  sampleNS(L.latLng(a[1], a[2]), (err, rgb) => {
-    linesNS[i] = a[0] + " (" + a[3] + " km): " + (err || rgb.join(","));
-    if (++doneNS === allA.length) boxNS.innerHTML = linesNS.join("<br>");
-  });
-});
-
 </script>
 </body>
 </html>
