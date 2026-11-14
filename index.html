@@ -418,6 +418,63 @@ redraw = function () {
     }
   }
 };
+// ---------- NASA landing sites ----------
+const sites = [
+  { n: "Viking 1", p: [22.3, -48.0], y: "1976", t: "lander", w: "Chryse Planitia" },
+  { n: "Viking 2", p: [47.6, 134.3], y: "1976", t: "lander", w: "Utopia Planitia" },
+  { n: "Mars Pathfinder (Sojourner)", p: [19.1, -33.3], y: "1997", t: "lander and rover", w: "Ares Vallis" },
+  { n: "Spirit", p: [-14.6, 175.5], y: "2004", t: "rover", w: "Gusev Crater" },
+  { n: "Opportunity", p: [-1.95, -5.53], y: "2004", t: "rover", w: "Meridiani Planum" },
+  { n: "Phoenix", p: [68.2, -125.75], y: "2008", t: "lander", w: "Northern plains" },
+  { n: "Curiosity", p: [-4.6, 137.4], y: "2012", t: "rover", w: "Gale Crater" },
+  { n: "InSight", p: [4.5, 135.6], y: "2018", t: "lander", w: "Elysium Planitia" },
+  { n: "Perseverance", p: [18.44, 77.45], y: "2021", t: "rover", w: "Jezero Crater" }
+];
+const landingGroup = L.layerGroup().addTo(map);
+layerCtl.addOverlay(landingGroup, "NASA landing sites");
+
+sites.forEach(s => {
+  const ll = L.latLng(s.p[0], s.p[1]);
+  const box = document.createElement("div");
+  box.style.maxWidth = "230px";
+  box.innerHTML = "<b>" + s.n + "</b><br>NASA " + s.t + ", landed " + s.y +
+    "<br>" + s.w + "<br><span class='small'>Approximate position</span><br>";
+  const b1 = document.createElement("button");
+  b1.className = "popup-btn";
+  b1.textContent = "Add to route";
+  b1.onclick = () => { addPoint(ll); map.closePopup(); };
+  const b2 = document.createElement("button");
+  b2.className = "popup-btn";
+  b2.style.marginLeft = "6px";
+  b2.textContent = "View in CTX";
+  b2.onclick = () => showInCtx(ll);
+  box.appendChild(b1);
+  box.appendChild(b2);
+  L.circleMarker(ll, { radius: 7, color: "#ffffff", weight: 2,
+    fillColor: "#5fd1c4", fillOpacity: 0.95, bubblingMouseEvents: false })
+    .addTo(landingGroup).bindPopup(box);
+});
+
+function nearestSite(ll) {
+  let best = null;
+  sites.forEach(s => {
+    const d = distanceKm(ll, { lat: s.p[0], lng: s.p[1] });
+    if (!best || d < best.d) best = { n: s.n, d: d };
+  });
+  return best;
+}
+function fmtKm(d) { return d < 100 ? d.toFixed(1) : d.toFixed(0); }
+
+const redrawBase5 = redraw;
+redraw = function () {
+  redrawBase5();
+  if (pts.length !== 2) return;
+  const na = nearestSite(pts[0]), nb = nearestSite(pts[1]);
+  const box = document.createElement("div");
+  box.innerHTML = "<b>Nearest NASA landing sites</b><br>A: " + na.n + ", " +
+    fmtKm(na.d) + " km<br>B: " + nb.n + ", " + fmtKm(nb.d) + " km<br><br>";
+  panel.insertBefore(box, document.getElementById("rst"));
+};
 
 </script>
 </body>
