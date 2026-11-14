@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -31,19 +31,20 @@ const mola = L.tileLayer(
     attribution: "NASA MGS MOLA" });
 
 const map = L.map("map", {
-  crs: L.CRS.EPSG4326, center: [10, 0], zoom: 1, minZoom: 0,
+  crs: L.CRS.EPSG4326, minZoom: 0,
   maxBounds: [[-90, -180], [90, 180]], layers: [viking]
 });
+map.fitBounds([[-90, -180], [90, 180]]);
 
 L.control.layers(
-  { "Снимки (Viking)": viking, "Рельеф (MOLA)": mola }
+  { "Imagery (Viking)": viking, "Elevation (MOLA)": mola }
 ).addTo(map);
 
 const places = [
-  { n: "Jezero Crater", p: [18.4, 77.7], d: "Место посадки Perseverance, древняя дельта реки." },
-  { n: "Gale Crater", p: [-5.4, 137.8], d: "Кратер Curiosity, гора Шарп со слоями осадочных пород." },
-  { n: "Olympus Mons", p: [18.65, -133.8], d: "Крупнейший вулкан Солнечной системы." },
-  { n: "Valles Marineris", p: [-14, -59], d: "Система каньонов длиной более 4000 км." }
+  { n: "Jezero Crater", p: [18.4, 77.7], d: "Landing site of Perseverance. Ancient river delta." },
+  { n: "Gale Crater", p: [-5.4, 137.8], d: "Curiosity rover site. Mount Sharp has layered sedimentary rock." },
+  { n: "Olympus Mons", p: [18.65, -133.8], d: "The largest volcano in the Solar System." },
+  { n: "Valles Marineris", p: [-14, -59], d: "Canyon system more than 4,000 km long." }
 ];
 places.forEach(x => L.marker(x.p).addTo(map)
   .bindPopup("<b>" + x.n + "</b><br>" + x.d));
