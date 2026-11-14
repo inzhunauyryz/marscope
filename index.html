@@ -10,6 +10,9 @@
   .title { position: absolute; z-index: 1000; top: 10px; left: 50px;
     background: rgba(0,0,0,.7); color: #ff9966; padding: 6px 12px;
     border-radius: 8px; font: bold 16px sans-serif; }
+  #note { position: absolute; z-index: 1000; top: 60px; left: 10px;
+    max-width: 75%; display: none; background: rgba(0,0,0,.8); color: #fff;
+    padding: 4px 8px; border-radius: 6px; font: 11px sans-serif; }
   #panel { position: absolute; z-index: 1000; left: 10px; right: 10px; bottom: 24px;
     max-height: 45%; overflow-y: auto;
     background: rgba(0,0,0,.85); color: #fff; padding: 10px 12px;
@@ -21,6 +24,7 @@
 </head>
 <body>
 <div class="title">MARSCOPE</div>
+<div id="note"></div>
 <div id="map"></div>
 <div id="panel"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -34,8 +38,6 @@ function trek(name, nz, attr) {
 }
 const viking = trek("Mars_Viking_MDIM21_ClrMosaic_global_232m", 7, "NASA/USGS Viking MDIM2.1");
 const mola = trek("Mars_MGS_MOLA_ClrShade_merge_global_463m", 6, "NASA MGS MOLA");
-const themis = trek("Mars_MO_THEMIS-IR-Day_mosaic_global_100m_v12_clon0_ly", 9, "NASA Mars Odyssey THEMIS");
-const ctx = trek("CTX_beta01_uncontrolled_5m_Caltech", 13, "NASA MRO CTX / Caltech");
 
 const map = L.map("map", {
   crs: L.CRS.EPSG4326, minZoom: 0, maxZoom: 14,
@@ -46,13 +48,56 @@ map.fitBounds([[-90, -180], [90, 180]]);
 const hazardGroup = L.layerGroup().addTo(map);
 const poiGroup = L.layerGroup().addTo(map);
 
-L.control.layers(
-  { "Imagery - Viking": viking,
-    "Elevation - MOLA": mola,
-    "Thermal IR - THEMIS": themis,
-    "High-res - CTX (zoom in)": ctx },
+const layerCtl = L.control.layers(
+  { "Imagery - Viking": viking, "Elevation - MOLA": mola },
   { "Hazard zones": hazardGroup, "Science targets": poiGroup }
 ).addTo(map);
+
+// ---------- Load extra layers from NASA's own WMTS description ----------
+const note = document.getElementById("note");
+note.onclick = () => { note.style.display = "none"; };
+function log(msg) {
+  note.style.display = "block";
+  note.innerHTML += msg + "<br>";
+}
+
+async function loadWmts(name, label, attr, fallbackTpl, fallbackZoom) {
+  try {
+    const r = await fetch(T + name + "/1.0.0/WMTSCapabilities.xml");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const xml = new DOMParser().parseFromString(await r.text(), "text/xml");
+    const ru = xml.getElementsByTagName("ResourceURL")[0];
+    const style = xml.getElementsByTagName("Style")[0]
+      .getElementsByTagName("ows:Identifier")[0].textContent;
+    let levels = 0, tms = "";
+    Array.from(xml.getElementsByTagName("TileMatrixSet")).forEach(s => {
+      if (!levels && s.getElementsByTagName("TileMatrix").length) {
+        levels = s.getElementsByTagName("TileMatrix").length;
+        tms = s.getElementsByTagName("ows:Identifier")[0].textContent;
+      }
+    });
+    const tpl = ru.getAttribute("template").replace("http://", "https://")
+      .replace("{Style}", style).replace("{TileMatrixSet}", tms)
+      .replace("{TileMatrix}", "{z}").replace("{TileRow}", "{y}")
+      .replace("{TileCol}", "{x}");
+    layerCtl.addBaseLayer(L.tileLayer(tpl, { maxNativeZoom: levels - 1,
+      maxZoom: 14, noWrap: true, attribution: attr }), label);
+    log(label + ": OK (" + levels + " zoom levels)");
+  } catch (e) {
+    log(label + ": failed (" + e.message + ")");
+    if (fallbackTpl) {
+      layerCtl.addBaseLayer(L.tileLayer(fallbackTpl, { maxNativeZoom: fallbackZoom,
+        maxZoom: 14, noWrap: true, attribution: attr }), label);
+      log(label + ": using fallback");
+    }
+  }
+}
+
+const THEMIS = "Mars_MO_THEMIS-IR-Day_mosaic_global_100m_v12_clon0_ly";
+loadWmts(THEMIS, "Thermal IR - THEMIS", "NASA Mars Odyssey THEMIS",
+  T + THEMIS + "/1.0.0/default/default028mm/{z}/{y}/{x}.png", 9);
+loadWmts("CTX_beta01_uncontrolled_5m_Caltech", "High-res - CTX (zoom in)",
+  "NASA MRO CTX / Caltech");
 
 // ---------- Hazard zones (approximate regional boxes) ----------
 const zones = [
