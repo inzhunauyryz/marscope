@@ -304,6 +304,73 @@ places.forEach(x => {
   box.appendChild(b2);
   L.marker(x.p).addTo(poiGroup).bindPopup(box);
 });
+// ---------- Safer route suggestion ----------
+function segExposure(a, b) {
+  const N = 60;
+  let w = 0, inside = 0;
+  for (let i = 0; i <= N; i++) {
+    const p = { lat: a.lat + (b.lat - a.lat) * i / N,
+                lng: a.lng + (b.lng - a.lng) * i / N };
+    let m = 0;
+    zones.forEach(z => {
+      if (inZone(p, z)) m = Math.max(m, z.sev === "HIGH" ? 1 : 0.5);
+    });
+    w += m;
+    if (m) inside++;
+  }
+  return { w: w / (N + 1), frac: inside / (N + 1) };
+}
+
+function pathStats(p) {
+  let len = 0, cost = 0, inside = 0;
+  for (let i = 1; i < p.length; i++) {
+    const d = distanceKm(p[i - 1], p[i]);
+    const e = segExposure(p[i - 1], p[i]);
+    len += d;
+    cost += d * (1 + 3 * e.w);
+    inside += e.frac * d;
+  }
+  return { len: len, cost: cost, pct: len ? inside / len * 100 : 0 };
+}
+
+function findSaferRoute(a, b) {
+  const direct = pathStats([a, b]);
+  let best = null;
+  const latMin = Math.max(-88, Math.min(a.lat, b.lat) - 25);
+  const latMax = Math.min(88, Math.max(a.lat, b.lat) + 25);
+  const lngMin = Math.max(-178, Math.min(a.lng, b.lng) - 40);
+  const lngMax = Math.min(178, Math.max(a.lng, b.lng) + 40);
+  for (let la = latMin; la <= latMax; la += 3) {
+    for (let ln = lngMin; ln <= lngMax; ln += 3) {
+      const w = L.latLng(la, ln);
+      const s = pathStats([a, w, b]);
+      if (!best || s.cost < best.cost) best = { wp: w, len: s.len,
+        cost: s.cost, pct: s.pct };
+    }
+  }
+  return { direct: direct, best: best };
+}
+
+const redrawBase2 = redraw;
+redraw = function () {
+  redrawBase2();
+  if (pts.length !== 2) return;
+  const r = findSaferRoute(pts[0], pts[1]);
+  const box = document.createElement("div");
+  if (r.best && r.best.cost < r.direct.cost * 0.9 && r.best.pct < r.direct.pct) {
+    L.polyline([pts[0], r.best.wp, pts[1]],
+      { color: "#55dd88", weight: 3 }).addTo(routeGroup);
+    const extra = (r.best.len / r.direct.len - 1) * 100;
+    box.innerHTML = "<b style='color:#55dd88'>Suggested safer route (green)</b><br>" +
+      r.best.len.toFixed(0) + " km (" + (extra >= 0 ? "+" : "") +
+      extra.toFixed(0) + "% longer)<br>Share of route inside hazard zones: " +
+      r.direct.pct.toFixed(0) + "% \u2192 " + r.best.pct.toFixed(0) + "%<br><br>";
+  } else {
+    box.innerHTML = "<b>Safer route:</b> the direct route is already close " +
+      "to the safest option.<br><br>";
+  }
+  panel.insertBefore(box, document.getElementById("rst"));
+};
 
 </script>
 </body>
