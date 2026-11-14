@@ -371,6 +371,38 @@ redraw = function () {
   }
   panel.insertBefore(box, document.getElementById("rst"));
 };
+// ---------- Marswalk mode (routes under 50 km) ----------
+const redrawBase3 = redraw;
+redraw = function () {
+  redrawBase3();
+  if (pts.length !== 2) return;
+  const a = pts[0], b = pts[1];
+  const d = distanceKm(a, b);
+  if (d > 50) return;
+  const speed = 3, win = 8;
+  const rt = d / speed * 2;
+  const box = document.createElement("div");
+  box.innerHTML = "<b>Marswalk estimate</b><br>Distance: " + d.toFixed(2) +
+    " km one way<br>Round trip at " + speed + " km/h: " + rt.toFixed(1) +
+    " h (" + (rt / win * 100).toFixed(0) + "% of an assumed " + win +
+    " h EVA window)<br><span class='small'>Assumed walking speed and EVA " +
+    "window. Real values depend on the suit, terrain and mission rules. " +
+    "Check rocks, slopes and dunes in CTX imagery.</span><br>";
+  const btn = document.createElement("button");
+  btn.textContent = "View route in CTX";
+  btn.onclick = () => {
+    const e = layerCtl._layers.find(l => l.name.indexOf("High-res") === 0);
+    if (e) {
+      layerCtl._layers.forEach(l => { if (!l.overlay) map.removeLayer(l.layer); });
+      map.addLayer(e.layer);
+    }
+    map.fitBounds(L.latLngBounds(a, b).pad(0.3));
+  };
+  box.appendChild(btn);
+  box.appendChild(document.createElement("br"));
+  box.appendChild(document.createElement("br"));
+  panel.insertBefore(box, document.getElementById("rst"));
+};
 
 </script>
 </body>
